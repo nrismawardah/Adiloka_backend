@@ -5,15 +5,9 @@ const storage = multer.memoryStorage();
 
 const karyaUpload = multer({
   storage: storage,
-  limits: { fileSize: 3 * 1024 * 1024 }, // 3MB
-  fileFilter: (req, file, cb) => {
-    const allowed = ['image/jpeg', 'image/png', 'image/jpg'];
-    if (allowed.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Format file tidak didukung'), false);
-    }
-  }
+  limits: { fileSize: 3 * 1024 * 1024 }, // tetap batasi ukuran
+  // Hapus fileFilter agar semua mime type diterima
 });
+
 
 module.exports = karyaUpload;

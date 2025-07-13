@@ -27,6 +27,15 @@ exports.login = (req, res) => {
       expiresIn: '7d'
     });
 
-    res.json({ token, user: { id_user: user.id_user, nama: user.nama, role: user.role } });
+    res.json({
+  token,
+  user: {
+    id_user: user.id_user,
+    nama: user.nama,
+    email: user.email,
+    role: user.role
+  }
+});
+
   });
 };

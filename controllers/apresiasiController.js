@@ -1,40 +1,30 @@
 const db = require('../config/db');
 
-// Tambah apresiasi
 exports.giveApresiasi = (req, res) => {
   const { id_karya } = req.params;
   const { emoji } = req.body;
   const id_user = req.user.id_user;
 
-  // Daftar emoji yang diperbolehkan
-  const allowedEmojis = ['👍', '❤️', '👏', '🔥', '💯'];
-
-  // Tolak jika emoji tidak ada dalam daftar
+  const allowedEmojis = ['👍', '❤️'];
   if (!allowedEmojis.includes(emoji)) {
     return res.status(400).json({
       message: 'Emoji tidak valid. Gunakan salah satu dari: ' + allowedEmojis.join(' ')
     });
   }
 
-  // Cek apakah user sudah memberi apresiasi
+  // Hapus apresiasi sebelumnya (jika ada), agar hanya satu emoji per karya per user
   db.query(
-    'SELECT * FROM apresiasi WHERE id_user = ? AND id_karya = ?',
+    'DELETE FROM apresiasi WHERE id_user = ? AND id_karya = ?',
     [id_user, id_karya],
-    (err, rows) => {
-      if (err) return res.status(500).json({ message: 'Gagal cek data' });
-      if (rows.length > 0) {
-        return res.status(400).json({ message: 'Kamu sudah memberi apresiasi pada karya ini' });
-      }
+    (err) => {
+      if (err) return res.status(500).json({ message: 'Gagal menghapus apresiasi lama' });
 
-      // Simpan apresiasi
+      // Simpan apresiasi baru
       db.query(
         'INSERT INTO apresiasi (id_user, id_karya, emoji) VALUES (?, ?, ?)',
         [id_user, id_karya, emoji],
-        (err) => {
-          if (err) return res.status(500).json({ message: 'Gagal memberi apresiasi' });
-
-          // Cek achievement setelah apresiasi
-          cekDanBeriAchievement(id_user);
+        (err2) => {
+          if (err2) return res.status(500).json({ message: 'Gagal memberi apresiasi' });
 
           res.json({ message: 'Apresiasi berhasil ditambahkan' });
         }
@@ -43,31 +33,58 @@ exports.giveApresiasi = (req, res) => {
   );
 };
 
-// Hapus apresiasi
+
+// Hapus apresiasi berdasarkan emoji
 exports.deleteApresiasi = (req, res) => {
   const { id_karya } = req.params;
+  const { emoji } = req.body;
   const id_user = req.user.id_user;
 
+  if (!emoji) {
+    return res.status(400).json({ message: 'Emoji diperlukan untuk menghapus apresiasi' });
+  }
+
   db.query(
-    'DELETE FROM apresiasi WHERE id_user = ? AND id_karya = ?',
-    [id_user, id_karya],
-    (err) => {
+    'DELETE FROM apresiasi WHERE id_user = ? AND id_karya = ? AND emoji = ?',
+    [id_user, id_karya, emoji],
+    (err, result) => {
       if (err) return res.status(500).json({ message: 'Gagal menghapus apresiasi' });
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ message: 'Apresiasi tidak ditemukan' });
+      }
       res.json({ message: 'Apresiasi dihapus' });
     }
   );
 };
 
-// Ambil jumlah apresiasi per karya
+
+// Ambil jumlah apresiasi per karya (group by emoji)
 exports.getApresiasiByKarya = (req, res) => {
   const { id_karya } = req.params;
 
   db.query(
-    'SELECT COUNT(*) AS total, emoji FROM apresiasi WHERE id_karya = ? GROUP BY emoji',
+    'SELECT emoji, COUNT(*) AS total FROM apresiasi WHERE id_karya = ? GROUP BY emoji',
     [id_karya],
     (err, rows) => {
       if (err) return res.status(500).json({ message: 'Gagal mengambil apresiasi' });
+
       res.json(rows);
+    }
+  );
+};
+
+
+// Ambil emoji yang diberikan user pada karya
+exports.getUserApresiasi = (req, res) => {
+  const { id_karya } = req.params;
+  const id_user = req.user.id_user;
+
+  db.query(
+    'SELECT emoji FROM apresiasi WHERE id_user = ? AND id_karya = ?',
+    [id_user, id_karya],
+    (err, rows) => {
+      if (err) return res.status(500).json({ message: 'Gagal ambil data apresiasi user' });
+      res.json(rows.map(r => r.emoji)); // array dengan max 1 item
     }
   );
 };

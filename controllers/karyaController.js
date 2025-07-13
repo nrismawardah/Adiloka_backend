@@ -1,7 +1,13 @@
 const db = require('../config/db');
+const { cekDanBeriAchievement } = require('../utils/achievementChecker');
 
 // Upload karya
 exports.uploadKarya = (req, res) => {
+  console.log('✅ Masuk uploadKarya');
+  console.log('🔐 req.user:', req.user);
+  console.log('📝 req.body:', req.body);
+  console.log('📸 req.file:', req.file);
+
   const { judul, deskripsi, kategori_id, daerah_id, lokasi } = req.body;
   const user = req.user;
 
@@ -27,28 +33,44 @@ exports.uploadKarya = (req, res) => {
     lokasi,
     user.id_user
   ], (err, result) => {
-    if (err) return res.status(500).json({ message: 'Gagal unggah karya', error: err });
+    if (err) {
+      console.error('❌ Query error:', err);
+      return res.status(500).json({ message: 'Gagal unggah karya', error: err });
+    }
+
     res.json({ message: 'Karya berhasil diunggah dan menunggu persetujuan' });
 
     // Cek achievement setelah upload
     cekDanBeriAchievement(user.id_user);
-
-    res.json({ message: 'Karya berhasil diunggah dan menunggu persetujuan' });
   });
 };
 
 // Lihat semua karya (beranda)
 exports.getAllKarya = (req, res) => {
   const query = `
-    SELECT k.id_karya, k.judul, k.deskripsi, k.mime_type, k.id_user, u.nama, k.status
+    SELECT 
+      k.id_karya,
+      k.judul,
+      k.deskripsi,
+      k.mime_type,
+      k.id_user,
+      u.nama,
+      k.status,
+      k.kategori_id,
+      kat.nama_kategori AS kategori,
+      k.daerah_id,
+      d.nama_daerah AS daerah,
+      k.lokasi
     FROM karya k
     JOIN users u ON k.id_user = u.id_user
+    JOIN kategori kat ON k.kategori_id = kat.id_kategori
+    JOIN daerah d ON k.daerah_id = d.id_daerah
     WHERE k.status = 'disetujui'
     ORDER BY k.tanggal_upload DESC
   `;
 
   db.query(query, (err, rows) => {
-    if (err) return res.status(500).json({ message: 'Gagal ambil data' });
+    if (err) return res.status(500).json({ message: 'Gagal ambil data', error: err });
     res.json(rows);
   });
 };
@@ -93,6 +115,19 @@ exports.editKarya = (req, res) => {
       res.json({ message: 'Karya berhasil diperbarui dan akan direview ulang' });
     });
   });
+};
+
+// Tambahan: Get karya milik user (profil)
+exports.getKaryaByUser = (req, res) => {
+  const id_user = req.user.id_user;
+  db.query(
+    'SELECT * FROM karya WHERE id_user = ? ORDER BY tanggal_upload DESC',
+    [id_user],
+    (err, rows) => {
+      if (err) return res.status(500).json({ message: 'Gagal ambil data karya' });
+      res.json(rows);
+    }
+  );
 };
 
 // Hapus karya (hanya untuk pemilik)
@@ -157,13 +192,65 @@ exports.updateStatusKarya = (req, res) => {
   });
 };
 
+exports.getKaryaDetailById = (req, res) => {
+  const { id } = req.params;
+
+  const karyaQuery = `
+    SELECT 
+      k.id_karya,
+      k.judul,
+      k.deskripsi,
+      k.tanggal_upload,
+      k.mime_type,
+      u.id_user,
+      u.nama,
+      k.kategori_id,
+      kat.nama_kategori AS kategori,
+      k.daerah_id,
+      d.nama_daerah AS daerah,
+      k.lokasi
+    FROM karya k
+    JOIN users u ON k.id_user = u.id_user
+    JOIN kategori kat ON k.kategori_id = kat.id_kategori
+    JOIN daerah d ON k.daerah_id = d.id_daerah
+    WHERE k.id_karya = ?
+  `;
+
+  const apresiasiQuery = `
+    SELECT emoji, COUNT(*) AS total
+    FROM apresiasi
+    WHERE id_karya = ?
+    GROUP BY emoji
+  `;
+
+  db.query(karyaQuery, [id], (err, karyaRows) => {
+    if (err || karyaRows.length === 0) {
+      return res.status(404).json({ message: 'Karya tidak ditemukan' });
+    }
+
+    const karya = karyaRows[0];
+
+    db.query(apresiasiQuery, [id], (err2, apresiasiRows) => {
+      if (err2) return res.status(500).json({ message: 'Gagal ambil data apresiasi' });
+
+      const apresiasi = {};
+      apresiasiRows.forEach(row => {
+        apresiasi[row.emoji] = row.total;
+      });
+
+      res.json({ ...karya, apresiasi });
+    });
+  });
+};
+
+
 // Filter karya berdasarkan kategori dan daerah
 exports.getKaryaFiltered = (req, res) => {
   const { kategori_id, daerah_id } = req.query;
 
   let query = `
     SELECT k.id_karya, k.judul, k.deskripsi, k.mime_type, u.nama, k.status,
-           k.kategori_id, k.daerah_id
+           k.kategori_id, k.daerah_id, k.lokasi
     FROM karya k
     JOIN users u ON k.id_user = u.id_user
     WHERE k.status = 'disetujui'
@@ -184,6 +271,46 @@ exports.getKaryaFiltered = (req, res) => {
 
   db.query(query, params, (err, rows) => {
     if (err) return res.status(500).json({ message: 'Gagal ambil data karya', error: err });
+    res.json(rows);
+  });
+};
+
+// 🔍 Search karya berdasarkan judul atau deskripsi
+exports.searchKarya = (req, res) => {
+  const { query } = req.query;
+
+  if (!query) {
+    return res.status(400).json({ message: 'Query pencarian wajib diisi' });
+  }
+
+  const sql = `
+    SELECT 
+      k.id_karya,
+      k.judul,
+      k.deskripsi,
+      k.mime_type,
+      u.nama,
+      k.status,
+      k.kategori_id,
+      kat.nama_kategori AS kategori,
+      k.daerah_id,
+      d.nama_daerah AS daerah,
+      k.lokasi
+    FROM karya k
+    JOIN users u ON k.id_user = u.id_user
+    JOIN kategori kat ON k.kategori_id = kat.id_kategori
+    JOIN daerah d ON k.daerah_id = d.id_daerah
+    WHERE k.status = 'disetujui'
+      AND (k.judul LIKE ? OR k.deskripsi LIKE ?)
+    ORDER BY k.tanggal_upload DESC
+  `;
+
+  const likeQuery = `%${query}%`;
+  db.query(sql, [likeQuery, likeQuery], (err, rows) => {
+    if (err) {
+      return res.status(500).json({ message: 'Gagal melakukan pencarian', error: err });
+    }
+
     res.json(rows);
   });
 };

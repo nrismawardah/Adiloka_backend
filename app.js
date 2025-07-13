@@ -17,18 +17,20 @@ const karyaRoutes = require('./routes/karyaRoutes');
 const kategoriRoutes = require('./routes/kategoriRoutes');
 const daerahRoutes = require('./routes/daerahRoutes');
 const apresiasiRoutes = require('./routes/apresiasiRoutes');
-const bookmarkRoutes = require('./routes/bookmarkRoutes');
+//const bookmarkRoutes = require('./routes/bookmarkRoutes');
 const achievementRoutes = require('./routes/achievementRoutes');
-const notifikasiRoutes = require('./routes/notifikasiRoutes');
+//const notifikasiRoutes = require('./routes/notifikasiRoutes');
+const userRoutes = require('./routes/userRoutes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/karya', karyaRoutes);
 app.use('/api/kategori', kategoriRoutes);
 app.use('/api/daerah', daerahRoutes);
 app.use('/api/apresiasi', apresiasiRoutes);
-app.use('/api/bookmark', bookmarkRoutes);
+//app.use('/api/bookmark', bookmarkRoutes);
 app.use('/api/achievement', achievementRoutes);
-app.use('/api/notifikasi', notifikasiRoutes);
+//app.use('/api/notifikasi', notifikasiRoutes);
+app.use('/api/user', userRoutes);
 
 // Start
 const PORT = process.env.PORT || 5000;
